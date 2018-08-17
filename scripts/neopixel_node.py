@@ -27,6 +27,9 @@ class NeoPixelNode:
         self.gatt.on_disconnect(self.on_disconnect)
         self.gatt.connect_async(self.on_connect)
 
+        self.config_chr = None
+        self.color_chr = None
+
     def on_connect(self, err):
         rospy.loginfo('Connected to %s', self.address)
         if not self.gatt.service_exists(GATT_SERVICE):
