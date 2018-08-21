@@ -53,12 +53,14 @@ class NeoPixelNode:
             self.bat_chr.on_notification_received(self.on_battery)
             self.bat_chr.enable_notifications_async(lambda x: None)
             self.bat_chr.read_value_async(lambda x, err: self.on_battery(x))
+        else:
+            rospy.logwarn('Could not find battery characteristic')
 
         if self.config_chr is None:
             rospy.logerr('Could not find config characteristic')
         else:
             def read_done(val, err):
-                rospy.loginfo('Current config:\n\tlength: %d\n\tpin: %d\n\ttype: 0x%x',
+                rospy.loginfo('Current config: {length: %d, pin: %d, type: 0x%04x}',
                         val[0], val[1], struct.unpack('<1H', struct.pack('>2B', *val[2:4]))[0]
                 )
 
