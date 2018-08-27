@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
-from mbientlab.warble import *
+from bluepy import btle
+
 from time import sleep
 import struct
+from threading import Thread
 
 import rospy
 from rospy import Subscriber
@@ -14,7 +16,31 @@ CONFIG_CHR     = "427c1001-97c7-413b-8de7-490917d220aa"
 COLOR_CHR      = "427c1002-97c7-413b-8de7-490917d220aa"
 
 BAT_CHR        = "2a19"
+CCCD_UUID      = "2902"
 
+class BleDelegate(btle.DefaultDelegate):
+    def __init__(self):
+        btle.DefaultDelegate.__init__(self)
+        self.cb_map = {}
+
+    def enableNotifications(self, char, cb):
+        if char and cb:
+            self.cb_map[char.getHandle()] = cb
+
+            desc = char.getDescriptors(forUUID=CCCD_UUID)[0]
+            desc.write('\x01\x00')
+
+    def disableNotifications(self, char):
+        if char:
+            self.cb_map[char.getHandle()] = None
+
+            desc = char.getDescriptors(forUUID=CCCD_UUID)[0]
+            desc.write('\x00\x00')
+
+    def handleNotification(self, cHandle, data):
+        if cHandle in self.cb_map:
+            if self.cb_map[cHandle]:
+                self.cb_map[cHandle](map(ord, data))
 
 class NeoPixelNode:
     def __init__(self):
@@ -27,36 +53,49 @@ class NeoPixelNode:
         self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
         self.pub_battery = rospy.Publisher('~battery', BatteryState, queue_size = 10, latch=True)
 
-        self.gatt = Gatt(self.address)
-        self.gatt.on_disconnect(self.on_disconnect)
-        self.gatt.connect_async(self.on_connect)
-
         self.config_chr = None
         self.color_chr = None
 
+        try:
+            self.gatt = btle.Peripheral(self.address, addrType='random')
+            self.gatt.withDelegate(BleDelegate())
+        except Exception as e:
+            rospy.logerr(e.message)
+            self.on_connect(e.message)
+
+        self.on_connect(None)
         rospy.on_shutdown(lambda: self.on_disconnect(None))
 
     def on_connect(self, err):
         rospy.loginfo('Connected to %s', self.address)
-        if not self.gatt.service_exists(GATT_SERVICE):
-            rospy.logerr('Could not find LED service')
-            self.gatt.disconnect()
-            return
-        else:
+        try:
+            self.gatt.getServiceByUUID(GATT_SERVICE)
             rospy.loginfo('Found LED service')
+        except btle.BTLEException as e:
+            if e.code == btle.BTLEException.GATT_ERROR:
+                rospy.logerr('Could not find LED service')
+                self.gatt.disconnect()
+                return
+            raise e
 
-        self.bat_chr = self.gatt.find_characteristic(BAT_CHR)
-        self.config_chr = self.gatt.find_characteristic(CONFIG_CHR)
-        self.color_chr = self.gatt.find_characteristic(COLOR_CHR)
+        bat_chr = self.gatt.getCharacteristics(uuid=BAT_CHR)
+        self.bat_chr = bat_chr[0] if bat_chr else None
+
+        config_chr = self.gatt.getCharacteristics(uuid=CONFIG_CHR)
+        self.config_chr = config_chr[0] if config_chr else None
+        color_chr = self.gatt.getCharacteristics(uuid=COLOR_CHR)
+        self.color_chr = color_chr[0] if color_chr else None
 
         if self.bat_chr:
-            self.bat_chr.on_notification_received(self.on_battery)
-            self.bat_chr.enable_notifications_async(lambda x: None)
-            self.bat_chr.read_value_async(lambda x, err: self.on_battery(x))
+            self.gatt.delegate.enableNotifications(self.bat_chr, self.on_battery)
+
+            val = map(ord, self.bat_chr.read())
+            self.on_battery(val)
+
         else:
             rospy.logwarn('Could not find battery characteristic')
 
-        if self.config_chr is None:
+        if not self.config_chr:
             rospy.logerr('Could not find config characteristic')
         else:
             def read_done(val, err):
@@ -64,19 +103,17 @@ class NeoPixelNode:
                         val[0], val[1], struct.unpack('<1H', struct.pack('>2B', *val[2:4]))[0]
                 )
 
-            self.config_chr.read_value_async(read_done)
+            read_done(map(ord, self.config_chr.read()), None)
 
-
-        if self.color_chr is None:
+        if not self.color_chr:
             rospy.logerr('Could not find color characteristic')
 
         if self.config_chr and self.color_chr:
-            rospy.loginfo('Setting pixels')
             self.setPixels(0, 16, 16)
 
-    def setPixels(self, r, g, b, index = NeoPixelColor.NEO_ALL_PIXELS):
+    def setPixels(self, r, g, b, index = NeoPixelColor.NEO_ALL_PIXELS, withResponse=False):
         if self.color_chr:
-            self.color_chr.write_async([index, r, g, b], lambda x: None)
+            self.color_chr.write(struct.pack('>4B', index, r, g, b), withResponse=withResponse)
 
     def setConfig(self, length, freq, order, pin):
         if self.config_chr:
@@ -87,11 +124,15 @@ class NeoPixelNode:
                     if val == new_cfg:
                         rospy.loginfo('Configuration changed successfully')
 
-                self.config_chr.read_value_async(read_done)
+                read_done(map(ord, self.config_chr.read()), None)
 
-            self.config_chr.write_async(new_cfg, write_done)
+            self.config_chr.write(bytearray(new_cfg))
+            write_done(None)
 
     def on_disconnect(self, err):
+        if self.bat_chr:
+            self.gatt.delegate.disableNotifications(self.bat_chr)
+
         if self.config_chr and self.color_chr:
             rospy.loginfo('Clearing pixels')
             self.setPixels(0, 0, 0)
@@ -125,6 +166,7 @@ class NeoPixelNode:
 
     def color_cb(self, msg):
         if self.color_chr:
+            # rospy.loginfo('Setting color')
             r = self.clamp(int(msg.color.r * 255.0))
             g = self.clamp(int(msg.color.g * 255.0))
             b = self.clamp(int(msg.color.b * 255.0))
@@ -138,6 +180,13 @@ class NeoPixelNode:
     def run(self):
         loop_rate = rospy.Rate(self.publish_rate)
 
+        def run_thread():
+            while rospy.is_shutdown():
+                self.gatt.waitForNotifications(0.1)
+
+        t = Thread(name='btle', target=run_thread)
+        t.start()
+
         while not rospy.is_shutdown():
             try:
                 loop_rate.sleep()
@@ -146,6 +195,7 @@ class NeoPixelNode:
                 if e.message == 'ROS time moved backwards':
                     rospy.logwarn('Saw a negative time change, resseting.')
 
+        t.join()
 
 if __name__ == '__main__':
     rospy.init_node('neopixel_ble', anonymous = False)
