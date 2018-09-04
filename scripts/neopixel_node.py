@@ -6,6 +6,8 @@ from time import sleep
 import struct
 from threading import Thread
 
+import numpy as np
+
 import rospy
 from rospy import Subscriber
 from std_msgs.msg import ColorRGBA
@@ -60,6 +62,11 @@ class NeoPixelNode:
         self.color_chr = None
 
         try:
+            # delay the start of the node by random time
+            delay = np.random.uniform() * 3.0
+            rospy.logwarn('Sleeping for {}s'.format(delay))
+            rospy.sleep(delay)
+
             self.gatt = btle.Peripheral(self.address, addrType='random')
             self.gatt.withDelegate(BleDelegate())
         except Exception as e:
@@ -71,6 +78,7 @@ class NeoPixelNode:
 
     def on_connect(self, err):
         rospy.loginfo('Connected to %s', self.address)
+
         try:
             self.gatt.getServiceByUUID(GATT_SERVICE)
             rospy.loginfo('Found LED service')
