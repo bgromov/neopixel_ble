@@ -6,6 +6,7 @@ import struct
 
 import rospy
 from rospy import Subscriber
+from std_msgs.msg import ColorRGBA
 from neopixel_ble.msg import NeoPixelConfig, NeoPixelColor
 from sensor_msgs.msg import BatteryState
 
@@ -22,6 +23,8 @@ class NeoPixelNode:
         self.name = rospy.get_param('~name', rospy.get_name().split('/')[-1])
 
         self.address = rospy.get_param('~address')
+        cc = rospy.get_param('~default_color', {'index': 255, 'color': {'r': 0.1, 'g': 0.0, 'b': 0.0, 'a': 1.0}})
+        self.default_color = NeoPixelColor(index=cc['index'], color=ColorRGBA(**cc['color']))
 
         self.sub_config = Subscriber('~config', NeoPixelConfig, self.config_cb)
         self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
@@ -71,8 +74,7 @@ class NeoPixelNode:
             rospy.logerr('Could not find color characteristic')
 
         if self.config_chr and self.color_chr:
-            rospy.loginfo('Setting pixels')
-            self.setPixels(0, 16, 16)
+            self.color_cb(self.default_color)
 
     def setPixels(self, r, g, b, index = NeoPixelColor.NEO_ALL_PIXELS):
         if self.color_chr:
