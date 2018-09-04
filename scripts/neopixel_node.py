@@ -170,9 +170,9 @@ class NeoPixelNode:
     def color_cb(self, msg):
         if self.color_chr:
             # rospy.loginfo('Setting color')
-            r = self.clamp(int(msg.color.r * 255.0))
-            g = self.clamp(int(msg.color.g * 255.0))
-            b = self.clamp(int(msg.color.b * 255.0))
+            r = self.clamp(int(msg.color.r * msg.color.a * 255.0))
+            g = self.clamp(int(msg.color.g * msg.color.a * 255.0))
+            b = self.clamp(int(msg.color.b * msg.color.a * 255.0))
             self.setPixels(r, g, b, msg.index)
 
     def clamp(self, val, min = 0, max = 255):
