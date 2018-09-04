@@ -121,6 +121,18 @@ class NeoPixelNode:
 
         self.pub_battery.publish(msg)
 
+        percentage_100 = val[0]
+
+        if percentage_100 <= 25.0 and percentage_100 > 10.0:
+            # Every 3 minutes
+            rospy.logwarn_throttle(180.0, '{} low battery: {}%'.format(self.name, val[0]))
+        elif percentage_100 <= 10.0 and percentage_100 > 5.0:
+            # Every 1 minute
+            rospy.logwarn_throttle(60.0, '{} very low battery: {}%'.format(self.name, val[0]))
+        elif percentage_100 <= 5.0:
+            # Every time the message received (usually every 30s)
+            rospy.logerr('{} critically low battery: {}%'.format(self.name, val[0]))
+
     def config_cb(self, msg):
         if self.config_chr:
             self.setConfig(msg.stripe_length, msg.pixel_freq, msg.color_order, msg.pin_number)
