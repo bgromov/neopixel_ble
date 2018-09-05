@@ -141,6 +141,9 @@ class NeoPixelNode:
             write_done(None)
 
     def on_disconnect(self, err):
+        self.sub_config.unregister()
+        self.sub_color.unregister()
+
         if self.bat_chr:
             self.gatt.delegate.disableNotifications(self.bat_chr)
 
