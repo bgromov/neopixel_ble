@@ -94,6 +94,12 @@ class NeoPixelNode:
             self.config_chr.write_async(new_cfg, write_done)
 
     def on_disconnect(self, err):
+        self.sub_config.unregister()
+        self.sub_color.unregister()
+
+        if self.bat_chr:
+            self.bat_chr.disable_notifications_async(lambda x: None)
+
         if self.config_chr and self.color_chr:
             rospy.loginfo('Clearing pixels')
             self.setPixels(0, 0, 0)
