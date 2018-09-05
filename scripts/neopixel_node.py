@@ -51,6 +51,14 @@ class NeoPixelNode:
         self.name = rospy.get_param('~name', rospy.get_name().split('/')[-1])
 
         self.address = rospy.get_param('~address')
+
+        iface = rospy.get_param('~iface', 'hci0') # 0 for /dev/hci0
+        if iface.startswith('hci') or iface.startswith('/dev/hci'):
+            self.iface = int(iface[iface.rfind('hci') + 3:]) # extract XX from 'hciXX'
+        else:
+            rospy.logfatal('Wrong interface name [{}]. It should be a string of the form \'hci0\' or \'/dev/hci0\'')
+            exit(-1)
+
         cc = rospy.get_param('~default_color', {'index': 255, 'color': {'r': 0.1, 'g': 0.0, 'b': 0.0, 'a': 1.0}})
         self.default_color = NeoPixelColor(index=cc['index'], color=ColorRGBA(**cc['color']))
 
@@ -67,7 +75,7 @@ class NeoPixelNode:
             rospy.logwarn('Sleeping for {}s'.format(delay))
             rospy.sleep(delay)
 
-            self.gatt = btle.Peripheral(self.address, addrType='random')
+            self.gatt = btle.Peripheral(self.address, addrType='random', iface=self.iface)
             self.gatt.withDelegate(BleDelegate())
         except Exception as e:
             rospy.logerr(e.message)
