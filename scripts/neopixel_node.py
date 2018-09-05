@@ -43,7 +43,7 @@ class NeoPixelNode:
         rospy.on_shutdown(lambda: self.on_disconnect(None))
 
     def on_connect(self, err):
-        rospy.loginfo('Connected to %s', self.address)
+        rospy.loginfo('Connected to {} on {}'.format(self.address, self.iface))
         if not self.gatt.service_exists(GATT_SERVICE):
             rospy.logerr('Could not find LED service')
             self.gatt.disconnect()
