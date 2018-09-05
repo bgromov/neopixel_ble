@@ -23,6 +23,9 @@ class NeoPixelNode:
         self.name = rospy.get_param('~name', rospy.get_name().split('/')[-1])
 
         self.address = rospy.get_param('~address')
+
+        self.iface = rospy.get_param('~iface', 'hci0') # 0 for /dev/hci0
+
         cc = rospy.get_param('~default_color', {'index': 255, 'color': {'r': 0.1, 'g': 0.0, 'b': 0.0, 'a': 1.0}})
         self.default_color = NeoPixelColor(index=cc['index'], color=ColorRGBA(**cc['color']))
 
@@ -30,7 +33,7 @@ class NeoPixelNode:
         self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
         self.pub_battery = rospy.Publisher('~battery', BatteryState, queue_size = 10, latch=True)
 
-        self.gatt = Gatt(self.address)
+        self.gatt = Gatt(self.address, hci=self.iface)
         self.gatt.on_disconnect(self.on_disconnect)
         self.gatt.connect_async(self.on_connect)
 
