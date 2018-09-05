@@ -85,7 +85,7 @@ class NeoPixelNode:
         rospy.on_shutdown(lambda: self.on_disconnect(None))
 
     def on_connect(self, err):
-        rospy.loginfo('Connected to %s', self.address)
+        rospy.loginfo('Connected to %s on %s', self.address, 'hci{}'.format(self.iface))
 
         try:
             self.gatt.getServiceByUUID(GATT_SERVICE)
