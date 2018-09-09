@@ -38,6 +38,8 @@ class NeoPixelNode:
         self.config_chr = None
         self.color_chr = None
 
+        self.last_color_msg = None
+
         rospy.on_shutdown(lambda: self.on_disconnect(None))
 
         # Sleep a bit to let device ready
@@ -151,12 +153,14 @@ class NeoPixelNode:
             self.setConfig(msg.stripe_length, msg.pixel_freq, msg.color_order, msg.pin_number)
 
     def color_cb(self, msg):
-        if self.color_chr:
+        if self.color_chr and self.last_color_msg != msg:
             # rospy.loginfo('Setting color')
             r = self.clamp(int(msg.color.r * msg.color.a * 255.0))
             g = self.clamp(int(msg.color.g * msg.color.a * 255.0))
             b = self.clamp(int(msg.color.b * msg.color.a * 255.0))
             self.setPixels(r, g, b, msg.index)
+
+            self.last_color_msg = msg
 
     def clamp(self, val, min = 0, max = 255):
         val = 0 if val < 0 else val
