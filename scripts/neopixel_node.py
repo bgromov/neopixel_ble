@@ -29,8 +29,6 @@ class NeoPixelNode:
         cc = rospy.get_param('~default_color', {'index': 255, 'color': {'r': 0.1, 'g': 0.0, 'b': 0.0, 'a': 1.0}})
         self.default_color = NeoPixelColor(index=cc['index'], color=ColorRGBA(**cc['color']))
 
-        self.sub_config = Subscriber('~config', NeoPixelConfig, self.config_cb)
-        self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
         self.pub_battery = rospy.Publisher('~battery', BatteryState, queue_size = 10, latch=True)
 
         self.gatt = Gatt(self.address, hci=self.iface)
@@ -41,6 +39,12 @@ class NeoPixelNode:
         self.color_chr = None
 
         rospy.on_shutdown(lambda: self.on_disconnect(None))
+
+        # Sleep a bit to let device ready
+        rospy.sleep(1.0)
+        # Register subscribers
+        self.sub_config = Subscriber('~config', NeoPixelConfig, self.config_cb)
+        self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
 
     def on_connect(self, err):
         rospy.loginfo('Connected to {} on {}'.format(self.address, self.iface))
