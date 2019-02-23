@@ -31,22 +31,21 @@ class NeoPixelNode:
 
         self.pub_battery = rospy.Publisher('~battery', BatteryState, queue_size = 10, latch=True)
 
-        self.gatt = Gatt(self.address, hci=self.iface)
-        self.gatt.on_disconnect(self.on_disconnect)
-        self.gatt.connect_async(self.on_connect)
+        rospy.on_shutdown(lambda: self.on_disconnect(None, is_ros=True))
 
+        self.connect()
+
+    def connect(self):
+        self.bat_chr = None
         self.config_chr = None
         self.color_chr = None
-
         self.last_color_msg = None
 
-        rospy.on_shutdown(lambda: self.on_disconnect(None))
+        self.gatt = None
 
-        # Sleep a bit to let device ready
-        rospy.sleep(1.0)
-        # Register subscribers
-        self.sub_config = Subscriber('~config', NeoPixelConfig, self.config_cb)
-        self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
+        self.gatt = Gatt(self.address, hci=self.iface)
+        self.gatt.on_disconnect(lambda err: self.on_disconnect(err, is_ros=False))
+        self.gatt.connect_async(self.on_connect)
 
     def on_connect(self, err):
         rospy.loginfo('Connected to {} on {}'.format(self.address, self.iface))
@@ -78,12 +77,16 @@ class NeoPixelNode:
 
             self.config_chr.read_value_async(read_done)
 
-
         if self.color_chr is None:
             rospy.logerr('Could not find color characteristic')
 
         if self.config_chr and self.color_chr:
             self.color_cb(self.default_color)
+            # Register subscribers
+            self.sub_config = Subscriber('~config', NeoPixelConfig, self.config_cb)
+            self.sub_color = Subscriber('~color', NeoPixelColor, self.color_cb)
+        else:
+            rospy.signal_shutdown('Failed to initialize remote BLE device')
 
     def setPixels(self, r, g, b, index = NeoPixelColor.NEO_ALL_PIXELS):
         if self.color_chr:
@@ -102,18 +105,23 @@ class NeoPixelNode:
 
             self.config_chr.write_async(new_cfg, write_done)
 
-    def on_disconnect(self, err):
-        self.sub_config.unregister()
-        self.sub_color.unregister()
+    def on_disconnect(self, err, is_ros=False):
+        if is_ros:
+            rospy.loginfo('Disconnected from %s', self.address)
+            self.sub_config.unregister()
+            self.sub_color.unregister()
 
-        if self.bat_chr:
-            self.bat_chr.disable_notifications_async(lambda x: None)
+            if self.bat_chr:
+                self.bat_chr.disable_notifications_async(lambda x: None)
 
-        if self.config_chr and self.color_chr:
-            rospy.loginfo('Clearing pixels')
-            self.setPixels(0, 0, 0)
-
-        rospy.loginfo('Disconnected from %s', self.address)
+            if self.config_chr and self.color_chr:
+                rospy.loginfo('Clearing pixels')
+                self.setPixels(0, 0, 0)
+        else:
+            rospy.logwarn('Disconnected from %s', self.address)
+            rospy.logwarn('Reconnecting...')
+            rospy.sleep(1.0)
+            self.connect()
 
     def on_battery(self, val):
         stamp = rospy.Time.now()
