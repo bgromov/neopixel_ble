@@ -5,6 +5,7 @@ from time import sleep
 import struct
 
 import rospy
+import rosparam
 from rospy import Subscriber
 from std_msgs.msg import ColorRGBA
 from neopixel_ble.msg import NeoPixelConfig, NeoPixelColor
@@ -22,9 +23,27 @@ class NeoPixelNode:
         self.publish_rate = rospy.get_param('~publish_rate', 25)
         self.name = rospy.get_param('~name', rospy.get_name().split('/')[-1])
 
-        self.address = rospy.get_param('~address')
+        self.address = rospy.get_param('~address').lower()
+        self.iface = rospy.get_param('~iface', 'hci0')
 
-        self.iface = rospy.get_param('~iface', 'hci0') # 0 for /dev/hci0
+        self.config_fname = rospy.get_param('~config_fname', 'neopixel.yaml')
+        self.config_param = rospy.get_name() + '/config'
+
+        try:
+            config = rosparam.load_file(self.config_fname)
+            rosparam.upload_params(self.config_param, config[0][0])
+        except rosparam.RosParamException, e:
+            pass
+
+        self.config = rospy.get_param('~config', {})
+        self.config = {k.lower():v for k,v in self.config.items()}
+
+        if self.address in self.config:
+            dev_conf = self.config[self.address]
+            if 'conn_address' in dev_conf:
+                conn_address = dev_conf['conn_address']
+                rospy.logwarn('Substituting device address from the config')
+                self.address = conn_address
 
         cc = rospy.get_param('~default_color', {'index': 255, 'color': {'r': 0.1, 'g': 0.0, 'b': 0.0, 'a': 1.0}})
         self.default_color = NeoPixelColor(index=cc['index'], color=ColorRGBA(**cc['color']))
