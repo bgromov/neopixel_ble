@@ -42,9 +42,12 @@ class NeoPixelNode:
         self.last_color_msg = None
 
         self.gatt = None
+        self.is_connected = False
 
         self.gatt = Gatt(self.address, hci=self.iface)
         self.gatt.on_disconnect(lambda err: self.on_disconnect(err, is_ros=False))
+
+        rospy.loginfo('Connecting to {0} ...'.format(self.address))
         self.gatt.connect_async(self.on_connect)
 
     def on_connect(self, err):
@@ -88,6 +91,8 @@ class NeoPixelNode:
         else:
             rospy.signal_shutdown('Failed to initialize remote BLE device')
 
+        self.is_connected = True
+
     def setPixels(self, r, g, b, index = NeoPixelColor.NEO_ALL_PIXELS):
         if self.color_chr:
             self.color_chr.write_async([index, r, g, b], lambda x: None)
@@ -107,17 +112,23 @@ class NeoPixelNode:
 
     def on_disconnect(self, err, is_ros=False):
         if is_ros:
-            rospy.loginfo('Disconnected from %s', self.address)
-            self.sub_config.unregister()
-            self.sub_color.unregister()
+            if self.is_connected:
+                rospy.loginfo('Disconnecting from %s', self.address)
+                self.sub_config.unregister()
+                self.sub_color.unregister()
 
-            if self.bat_chr:
-                self.bat_chr.disable_notifications_async(lambda x: None)
+                if self.bat_chr:
+                    self.bat_chr.disable_notifications_async(lambda x: None)
 
-            if self.config_chr and self.color_chr:
-                rospy.loginfo('Clearing pixels')
-                self.setPixels(0, 0, 0)
+                if self.config_chr and self.color_chr:
+                    rospy.loginfo('Clearing pixels')
+                    self.setPixels(0, 0, 0)
+
+                self.is_connected = False
+
         else:
+            self.is_connected = False
+
             rospy.logwarn('Disconnected from %s', self.address)
             rospy.logwarn('Reconnecting...')
             rospy.sleep(1.0)
